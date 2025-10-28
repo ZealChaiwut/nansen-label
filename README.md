@@ -64,3 +64,27 @@ python prep/00_run_prep.py --project YOUR_PROJECT --dataset phoenix_flipper
 5. **Wallet Analysis** → (Future) Identify buyers during crisis windows
 6. **Profit Calculation** → (Future) Calculate PnL for recovery periods
 7. **Label Assignment** → (Future) Tag profitable "Phoenix Flipper" wallets
+
+## Architecture Overview
+
+_[To be filled: Data pipeline architecture, BigQuery schema design, ETL flow, data modeling approach]_
+
+## Technology Choices and Trade-offs
+
+**Approach**: BigQuery SQL via Python Client (+ Pandas for results) & BigQuery UDFs
+
+### Pros
+- **Scalability**: Leverages BigQuery's serverless engine for core SQL and UDF execution 🚀
+- **Cost-Effective Processing**: Pay-per-query model efficient for analytics. UDF compute included
+- **Direct Access to Public Data**: Easily queries Google's public blockchain datasets
+- **Python Flexibility**: Python client orchestrates SQL/UDFs. Can use SQL, JS, or potentially Python for UDF logic, extending SQL capabilities server-side
+- **GCP Integration**: Seamless integration with other GCP services
+
+### Cons
+- **SQL Dependency**: Core logic is still SQL-heavy, but UDFs help encapsulate complex logic
+- **UDF Complexity/Limitations**: Writing, deploying, and managing UDFs adds complexity (especially JS/Python UDFs). UDFs have performance limits and resource constraints. Debugging UDFs can be harder than pure SQL
+- **Potential Egress Costs**: Pulling large final results into local Pandas still incurs costs/bottlenecks
+
+## Future Improvements Roadmap
+
+_[To be filled: Planned features, scalability improvements, additional data sources, model enhancements]_
