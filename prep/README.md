@@ -119,6 +119,11 @@ prep/
 ├── 06_verify_data_quality.py  # Verify data joins and quality
 └── README.md                   # This guide
 
+lib/
+├── __init__.py                 # Python package init
+├── bigquery_helpers.py         # BigQuery utility functions
+└── ethereum_udfs.sql          # Reusable Ethereum UDFs
+
 schemas/
 ├── dim_dex_pools.sql          # DEX pools schema
 ├── dim_token_price_history.sql # Price history schema  

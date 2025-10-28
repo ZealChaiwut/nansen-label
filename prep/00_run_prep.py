@@ -72,10 +72,7 @@ Examples:
 
 def run_command(cmd, description, prompt_after=True):
     """Run a command and handle errors."""
-    print(f"\n{'='*60}")
-    print(f"🚀 {description}")
-    print(f"{'='*60}")
-    print(f"Running: {' '.join(str(c) for c in cmd)}")
+    print(f"\n🚀 {description}")
     
     try:
         result = subprocess.run(cmd, check=True, capture_output=True, text=True)
@@ -112,15 +109,7 @@ def main():
     target = f"{args.project}.{args.dataset}"
     
     print("🏷️  Phoenix Flipper Data Pipeline")
-    print("="*50)
-    print(f"Project ID: {args.project}")
-    print(f"Dataset ID: {args.dataset}")
-    print(f"Target: {target}")
-    print(f"Hard Reset: {'YES' if args.hard_reset else 'NO'}")
-    print(f"DEX Pools: ALL available real pools from Ethereum (crisis tokens × base tokens)")
-    print(f"Crisis Events: {CRISES}")
-    print(f"Interactive Mode: {'OFF' if args.no_prompt else 'ON'}")
-    print(f"Data Only Mode: {'ON' if args.data_only else 'OFF'}")
+    print(f"Target: {target} | Reset: {'YES' if args.hard_reset else 'NO'} | Interactive: {'OFF' if args.no_prompt else 'ON'}")
     
     # Get the directory where this script is located
     script_dir = Path(__file__).parent
@@ -213,15 +202,8 @@ def main():
         sys.exit(1)
     
     # Pipeline completed successfully
-    print(f"\n{'='*60}")
-    print("🎉 PIPELINE COMPLETED SUCCESSFULLY!")
-    print(f"{'='*60}")
-    print(f"✅ Python dependencies installed")
-    print(f"✅ All tables created in: {target}")
-    print(f"✅ Generated {CRISES} crisis events")
-    print(f"✅ Generated comprehensive price history data")
-    print(f"✅ Generated ALL available real DEX pools from Ethereum (crisis tokens × base tokens)")
-    print(f"✅ Data quality verification passed")
+    print(f"\n🎉 PIPELINE COMPLETED SUCCESSFULLY!")
+    print(f"✅ All data generated in: {target}")
 
 
 

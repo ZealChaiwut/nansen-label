@@ -121,10 +121,8 @@ def generate_crisis_events(count=6):
 
 def load_to_bigquery(df, config, table_name):
     """Load DataFrame to BigQuery table."""
-    # Check for empty DataFrame
     if len(df) == 0:
-        print(f"⚠️  Skipping {table_name} - no data to load")
-        print(f"💡 This may happen when no crisis events are generated")
+        print(f"⚠️ No data to load for {table_name}")
         return
     
     client = bigquery.Client(project=config.project_id)
@@ -135,12 +133,11 @@ def load_to_bigquery(df, config, table_name):
         create_disposition="CREATE_IF_NEEDED"
     )
     
-    print(f"Loading {len(df)} rows to {table_name}...")
     job = client.load_table_from_dataframe(df, table_id, job_config=job_config)
     job.result()
     
     table = client.get_table(table_id)
-    print(f"✓ Loaded {table.num_rows} rows to {table_id}")
+    print(f"✓ Loaded {table.num_rows} rows to {table_name}")
 
 
 def get_args():
@@ -208,15 +205,10 @@ def main():
         create_dataset_if_not_exists(config)
         
         # Generate crisis events data
-        print(f"\nM2.1 - Generating crisis_events_with_window data ({args.count} events)...")
         df_crisis = generate_crisis_events(count=args.count)
         load_to_bigquery(df_crisis, config, "crisis_events_with_window")
         
-        print("\n" + "=" * 80)
-        print("✓ Milestone 2 (M2) data generation complete!")
-        print("=" * 80)
-        print(f"\nDataset: {config.project_id}.{config.dataset_id}")
-        print(f"- crisis_events_with_window: {len(df_crisis)} crisis events")
+        print(f"✓ Crisis events generation complete: {len(df_crisis)} events")
         
     except Exception as e:
         print(f"\n✗ Error: {e}")

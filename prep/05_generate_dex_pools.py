@@ -5,10 +5,16 @@ Creates dim_dex_pools from real Ethereum logs based on crisis tokens.
 """
 import argparse
 import os
+import sys
 from collections import namedtuple
+from pathlib import Path
 from google.cloud import bigquery
 import pandas as pd
 import numpy as np
+
+# Add lib directory to path for imports
+sys.path.append(str(Path(__file__).parent.parent / "lib"))
+from bigquery_helpers import create_query_with_udfs, ETHEREUM_CONSTANTS
 
 # Configuration container for BigQuery project and dataset
 BigQueryConfig = namedtuple('BigQueryConfig', ['project_id', 'dataset_id'])
@@ -31,7 +37,6 @@ def create_dataset_if_not_exists(config):
 
 def generate_dim_dex_pools(config):
     """Generate DEX pool data using REAL pool addresses from BigQuery public data."""
-    from google.cloud import bigquery
     
     # First, get the crisis tokens from the crisis_events_with_window table
     print("🔍 Reading crisis tokens from crisis_events_with_window table...")
@@ -46,22 +51,20 @@ def generate_dim_dex_pools(config):
     try:
         crisis_result = client.query(crisis_query).to_dataframe()
         crisis_tokens = crisis_result['token_address'].tolist()
-        print(f"✅ Found {len(crisis_tokens)} unique crisis tokens in the table")
-        for i, token in enumerate(crisis_tokens, 1):
-            print(f"   {i}. {token}")
+        print(f"✅ Found {len(crisis_tokens)} crisis tokens")
     except Exception as e:
-        print(f"❌ Could not read crisis events table: {e}")
-        print("💡 Make sure crisis_events_with_window table exists (run step 3 first)")
-        print("🚨 CRITICAL: Cannot generate DEX pools without crisis tokens!")
+        print(f"❌ Crisis events table not found: {e}")
         raise Exception(f"Crisis events table not found: {e}")
     
-    # Major base tokens ONLY (lowercase for comparison) 
-    base_tokens = [
-        "0x6b175474e89094c44da98b954eedeac495271d0f",   # DAI
-        "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",   # USDC
-        "0xdac17f958d2ee523a2206206994597c13d831ec7",   # USDT
-        "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",   # WETH
-    ]
+    # Get constants from shared library
+    UNISWAP_V2_FACTORY = ETHEREUM_CONSTANTS['UNISWAP_V2_FACTORY']
+    UNISWAP_V3_FACTORY = ETHEREUM_CONSTANTS['UNISWAP_V3_FACTORY']
+    V2_PAIR_CREATED_TOPIC = ETHEREUM_CONSTANTS['V2_PAIR_CREATED_TOPIC']
+    V3_POOL_CREATED_TOPIC = ETHEREUM_CONSTANTS['V3_POOL_CREATED_TOPIC']
+    BASE_TOKEN_SYMBOLS = ETHEREUM_CONSTANTS['BASE_TOKENS']
+    
+    # Get base token addresses from the dictionary
+    base_tokens = list(BASE_TOKEN_SYMBOLS.keys())
     
     # Create dynamic token symbol mapping 
     token_symbols = {}
@@ -70,108 +73,56 @@ def generate_dim_dex_pools(config):
     for i, token in enumerate(crisis_tokens, 1):
         token_symbols[token] = f"CRISIS{i}"
     
-    # Add base tokens
-    base_token_symbols = {
-        "0x6b175474e89094c44da98b954eedeac495271d0f": "DAI",
-        "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48": "USDC",
-        "0xdac17f958d2ee523a2206206994597c13d831ec7": "USDT",
-        "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2": "WETH",
-    }
-    token_symbols.update(base_token_symbols)
+    # Add base token symbols
+    token_symbols.update(BASE_TOKEN_SYMBOLS)
     
-    print(f"🔍 Querying BigQuery for real DEX pools containing crisis tokens...")
-    
+    print(f"🔍 Querying Uniswap V2/V3 pools for {len(crisis_tokens)} crisis tokens...")
     client = bigquery.Client()
     
-    print(f"\n🎯 Looking for ALL pools pairing {len(crisis_tokens)} crisis tokens with {len(base_tokens)} base tokens...")
-    print(f"📋 Base tokens: DAI, USDC, USDT, WETH")
-    print(f"💡 Finding all real Uniswap V2 & V3 pools for these specific crisis token pairs (no limit)")
-    
-    # Create parameter strings for SQL IN clauses (lowercase for consistency)
+    # Create SQL arrays for token filtering
     crisis_tokens_sql = "', '".join([t.lower() for t in crisis_tokens])
     base_tokens_sql = "', '".join([t.lower() for t in base_tokens])
     
-    # Advanced query using proper topic decoding (based on working query)
-    query = f"""
-    WITH constants AS (
-      SELECT
-        -- Factory Addresses
-        '0x5c69bee701ef814a2b6a3edd4b1652cb9cc5aa6f' AS uniswap_v2_factory,
-        '0x1f98431c8ad98523631ae4a59f267346ea31f984' AS uniswap_v3_factory,
-        -- Event Topic Hashes
-        '0x0d3648bd0f6ba80134a33ba9275ac585d9d315f0ad8355cddefde31afa28d0e9' AS v2_pair_created_topic,
-        '0x783cca1c0412dd0d695e784568c96da2e9c22ff989357a2e8b1d9b2b4e6b7118' AS v3_pool_created_topic
-    ),
-    crisis_tokens AS (
-      SELECT token_address FROM UNNEST(['{crisis_tokens_sql}']) AS token_address
-    ),
-    base_tokens AS (
-      SELECT token_address FROM UNNEST(['{base_tokens_sql}']) AS token_address  
-    )
+    # Create query with UDFs using helper function
+    main_query = f"""
     
     SELECT
       block_timestamp,
-      CASE
-        WHEN address = (SELECT uniswap_v2_factory FROM constants) THEN 'Uniswap V2'
-        WHEN address = (SELECT uniswap_v3_factory FROM constants) THEN 'Uniswap V3'
-        ELSE 'Unknown Factory'
-      END AS dex_protocol,
+      GET_DEX_PROTOCOL(address) AS dex_protocol,
       'ethereum' as chain,
-      -- Decode token addresses from topics
-      LOWER(CONCAT('0x', SUBSTR(topics[SAFE_OFFSET(1)], 27, 40))) AS token0_address,
-      LOWER(CONCAT('0x', SUBSTR(topics[SAFE_OFFSET(2)], 27, 40))) AS token1_address,
-      -- Decode pool/pair addresses from data field
-      CASE
-        WHEN address = (SELECT uniswap_v2_factory FROM constants)
-          THEN LOWER(CONCAT('0x', SUBSTR(data, 27, 40)))  -- V2: Pair address in data
-        WHEN address = (SELECT uniswap_v3_factory FROM constants)
-          THEN LOWER(CONCAT('0x', SUBSTR(data, 1+96, 40)))  -- V3: Pool address in data
+      EXTRACT_TOKEN_ADDRESS(topics, 1) AS token0_address,
+      EXTRACT_TOKEN_ADDRESS(topics, 2) AS token1_address,
+      CASE 
+        WHEN address = '{UNISWAP_V2_FACTORY}' THEN EXTRACT_V2_PAIR_ADDRESS(data)
+        WHEN address = '{UNISWAP_V3_FACTORY}' THEN EXTRACT_V3_POOL_ADDRESS(data)
         ELSE NULL
       END AS pool_address
-    FROM
-      `bigquery-public-data.crypto_ethereum.logs`
-    CROSS JOIN constants
-    WHERE
-      -- Filter by known factory addresses
-      address IN (
-          (SELECT uniswap_v2_factory FROM constants),
-          (SELECT uniswap_v3_factory FROM constants)
-        )
-      -- Filter by creation event topics
+    FROM `bigquery-public-data.crypto_ethereum.logs`
+    WHERE address IN ('{UNISWAP_V2_FACTORY}', '{UNISWAP_V3_FACTORY}')
       AND topics[SAFE_OFFSET(0)] IN (
-          (SELECT v2_pair_created_topic FROM constants),
-          (SELECT v3_pool_created_topic FROM constants)
-        )
-      -- Filter for crisis token + base token pairs ONLY
-      AND (
-        -- Crisis token as token0, base token as token1
-        (LOWER(CONCAT('0x', SUBSTR(topics[SAFE_OFFSET(1)], 27, 40))) IN (SELECT token_address FROM crisis_tokens)
-         AND LOWER(CONCAT('0x', SUBSTR(topics[SAFE_OFFSET(2)], 27, 40))) IN (SELECT token_address FROM base_tokens))  
-        OR 
-        -- Base token as token0, crisis token as token1
-        (LOWER(CONCAT('0x', SUBSTR(topics[SAFE_OFFSET(1)], 27, 40))) IN (SELECT token_address FROM base_tokens)
-         AND LOWER(CONCAT('0x', SUBSTR(topics[SAFE_OFFSET(2)], 27, 40))) IN (SELECT token_address FROM crisis_tokens))
+        '{V2_PAIR_CREATED_TOPIC}',  -- V2 PairCreated
+        '{V3_POOL_CREATED_TOPIC}'   -- V3 PoolCreated
       )
-      -- Get historical data
       AND block_timestamp >= '2020-01-01'
-    ORDER BY
-      block_timestamp DESC
+      AND (
+        (EXTRACT_TOKEN_ADDRESS(topics, 1) IN ('{crisis_tokens_sql}') 
+         AND EXTRACT_TOKEN_ADDRESS(topics, 2) IN ('{base_tokens_sql}'))
+        OR 
+        (EXTRACT_TOKEN_ADDRESS(topics, 1) IN ('{base_tokens_sql}')
+         AND EXTRACT_TOKEN_ADDRESS(topics, 2) IN ('{crisis_tokens_sql}'))
+      )
+    ORDER BY block_timestamp DESC
     """
     
+    # Combine UDFs with main query
+    query = create_query_with_udfs(main_query)
+    
     try:
-        print("🔍 Executing query for ALL real DEX pools (no limit)...")
         query_job = client.query(query)
         real_pools_df = query_job.to_dataframe()
         
-        print(f"✅ Found {len(real_pools_df)} real DEX pools from BigQuery")
-        
         if len(real_pools_df) == 0:
-            print("❌ No real DEX pools found for crisis tokens")
-            print("💡 This could mean:")
-            print("   - Token addresses might be incorrect")
-            print("   - Tokens don't have Uniswap V2 pools with major pairs") 
-            print("   - BigQuery connection or access issues")
-            print("🚨 CRITICAL: Cannot proceed without DEX pools!")
+            print("❌ No DEX pools found for crisis tokens")
             raise Exception("No real DEX pools found for crisis tokens")
         
         # Convert to our format - ONLY real pools
@@ -192,7 +143,6 @@ def generate_dim_dex_pools(config):
                 
             # Skip if addresses are invalid length
             if len(token0_addr) != 42 or len(token1_addr) != 42 or len(pool_addr) != 42:
-                print(f"⚠️ Skipping invalid address lengths: {pool_addr}")
                 continue
                 
             # Get symbols (addresses are already lowercase)
@@ -211,32 +161,17 @@ def generate_dim_dex_pools(config):
             })
         
         result_df = pd.DataFrame(data)
-        print(f"📊 Found {len(result_df)} REAL DEX pools from Ethereum blockchain (V2 & V3)")
-        print(f"💎 Coverage: {len(crisis_tokens)} crisis tokens × {len(base_tokens)} base tokens = {len(crisis_tokens) * len(base_tokens)} possible pairs")
-        print(f"✅ Success rate: {len(result_df)}/{len(crisis_tokens) * len(base_tokens)} pairs found ({len(result_df)/(len(crisis_tokens) * len(base_tokens))*100:.1f}%)")
-        
-        # Show some examples
-        if len(result_df) > 0:
-            print("\n🎯 Sample pools found:")
-            for _, pool in result_df.head(5).iterrows():
-                print(f"   • {pool['pool_name']} - {pool['pool_address'][:10]}...")
-        
+        print(f"✅ Found {len(result_df)} real DEX pools")
         return result_df
         
     except Exception as e:
-        print(f"❌ Failed to query real pools from BigQuery: {e}")
-        print("💡 Check your BigQuery connection and token addresses")
-        print("🚫 NO FALLBACK TO MOCK DATA - Only real pools allowed")
-        print("🚨 CRITICAL: BigQuery query failed!")
+        print(f"❌ BigQuery query failed: {e}")
         raise Exception(f"BigQuery pool query failed: {e}")
 
 
 def load_to_bigquery(df, config, table_name):
     """Load DataFrame to BigQuery table."""
-    # Check for empty DataFrame - this should not happen now!
     if len(df) == 0:
-        print(f"🚨 CRITICAL ERROR: {table_name} has no data to load!")
-        print(f"💡 This indicates a serious issue with data generation")
         raise Exception(f"No data generated for table {table_name}")
     
     client = bigquery.Client(project=config.project_id)
@@ -247,12 +182,11 @@ def load_to_bigquery(df, config, table_name):
         create_disposition="CREATE_IF_NEEDED"
     )
     
-    print(f"Loading {len(df)} rows to {table_name}...")
     job = client.load_table_from_dataframe(df, table_id, job_config=job_config)
     job.result()
     
     table = client.get_table(table_id)
-    print(f"✓ Loaded {table.num_rows} rows to {table_id}")
+    print(f"✓ Loaded {table.num_rows} rows to {table_name}")
 
 
 def get_args():
@@ -314,18 +248,10 @@ def main():
         create_dataset_if_not_exists(config)
         
         # Generate DEX pools data
-        print(f"\n🏊 Generating real DEX pools from Ethereum...")
         df_pools = generate_dim_dex_pools(config)
-        print(f"✅ Generated {len(df_pools)} DEX pool records")
-        
-        print(f"\n💾 Loading DEX pools to BigQuery...")
         load_to_bigquery(df_pools, config, "dim_dex_pools")
         
-        print("\n" + "=" * 80)
-        print("✓ DEX pools generation complete!")
-        print("=" * 80)
-        print(f"\nDataset: {config.project_id}.{config.dataset_id}")
-        print(f"- dim_dex_pools: {len(df_pools)} real pools")
+        print(f"✓ DEX pools generation complete: {len(df_pools)} pools")
         
     except Exception as e:
         print(f"\n✗ Error: {e}")

@@ -21,7 +21,6 @@ def create_dataset_if_not_exists(client, config):
     
     try:
         dataset = client.get_dataset(dataset_id)
-        print(f"✓ Dataset {dataset_id} already exists")
     except Exception:
         dataset = bigquery.Dataset(dataset_id)
         dataset.location = "US"
@@ -66,10 +65,10 @@ def drop_table_if_exists(client, config, table_name, drop_tables):
         client.get_table(table_id)
         # Table exists, drop it
         client.delete_table(table_id)
-        print(f"  ✓ Dropped existing table: {table_name}")
+        print(f"  ✓ Dropped {table_name}")
     except Exception:
         # Table doesn't exist, nothing to drop
-        print(f"  - Table {table_name} doesn't exist, nothing to drop")
+        pass
 
 
 def extract_table_name_from_sql(sql_content):
@@ -119,9 +118,9 @@ def execute_schema_file(client, config, file_path, drop_tables=False):
         query_job.result()  # Wait for completion
         
         if table_name:
-            print(f"  ✓ Created/updated table: {table_name}")
+            print(f"  ✓ Created {table_name}")
         else:
-            print(f"  ✓ Executed SQL from {file_path.name}")
+            print(f"  ✓ Executed {file_path.name}")
             
     except Exception as e:
         print(f"  ✗ Error executing {file_path.name}: {e}")
@@ -190,7 +189,6 @@ def main():
     try:
         # Initialize BigQuery client
         client = bigquery.Client(project=config.project_id)
-        print(f"✓ Connected to BigQuery successfully!")
         
         # Create dataset if needed
         create_dataset_if_not_exists(client, config)
@@ -199,14 +197,10 @@ def main():
         schema_files = get_schema_files()
         
         # Execute each schema file
-        print(f"\nExecuting {len(schema_files)} schema files...")
-        
         for file_path in schema_files:
             execute_schema_file(client, config, file_path, args.drop)
         
-        print("\n" + "=" * 80)
-        print("✓ All schemas created successfully!")
-        print("=" * 80)
+        print(f"✓ Created {len(schema_files)} schemas successfully")
         
         # List created tables
         dataset_ref = client.dataset(config.dataset_id)

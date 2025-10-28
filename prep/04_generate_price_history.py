@@ -44,11 +44,9 @@ def generate_token_price_history(config):
     
     try:
         crisis_df = client.query(crisis_query).to_dataframe()
-        print(f"Found {len(crisis_df)} crisis events to align price data with")
+        print(f"✅ Found {len(crisis_df)} crisis events")
     except Exception as e:
-        print(f"❌ Could not read crisis events table: {e}")
-        print("💡 Make sure crisis_events_with_window table exists (run step 3 first)")
-        print("🚨 CRITICAL: Cannot generate price history without crisis events!")
+        print(f"❌ Crisis events table not found: {e}")
         raise Exception(f"Crisis events table not found: {e}")
     
     # Create dynamic token info based on actual crisis tokens
@@ -147,10 +145,7 @@ def generate_token_price_history(config):
 
 def load_to_bigquery(df, config, table_name):
     """Load DataFrame to BigQuery table."""
-    # Check for empty DataFrame - this should not happen now!
     if len(df) == 0:
-        print(f"🚨 CRITICAL ERROR: {table_name} has no data to load!")
-        print(f"💡 This indicates a serious issue with data generation")
         raise Exception(f"No data generated for table {table_name}")
     
     client = bigquery.Client(project=config.project_id)
@@ -161,12 +156,11 @@ def load_to_bigquery(df, config, table_name):
         create_disposition="CREATE_IF_NEEDED"
     )
     
-    print(f"Loading {len(df)} rows to {table_name}...")
     job = client.load_table_from_dataframe(df, table_id, job_config=job_config)
     job.result()
     
     table = client.get_table(table_id)
-    print(f"✓ Loaded {table.num_rows} rows to {table_id}")
+    print(f"✓ Loaded {table.num_rows} rows to {table_name}")
 
 
 def get_args():
@@ -228,18 +222,10 @@ def main():
         create_dataset_if_not_exists(config)
         
         # Generate token price history data
-        print(f"\n📈 Generating price history (aligned with crisis events)...")
         df_price_history = generate_token_price_history(config)
-        print(f"✅ Generated {len(df_price_history)} price history records")
-        
-        print(f"\n💾 Loading price history to BigQuery...")
         load_to_bigquery(df_price_history, config, "dim_token_price_history")
         
-        print("\n" + "=" * 80)
-        print("✓ Price history generation complete!")
-        print("=" * 80)
-        print(f"\nDataset: {config.project_id}.{config.dataset_id}")
-        print(f"- dim_token_price_history: {len(df_price_history)} price records")
+        print(f"✓ Price history generation complete: {len(df_price_history)} records")
         
     except Exception as e:
         print(f"\n✗ Error: {e}")
