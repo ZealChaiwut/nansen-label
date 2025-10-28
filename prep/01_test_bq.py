@@ -3,18 +3,20 @@
 Test BigQuery connection and basic functionality.
 """
 import os
+import sys
+from pathlib import Path
 from google.cloud import bigquery
 
-def test_connection():
+# Add lib directory to path for imports
+sys.path.append(str(Path(__file__).parent.parent / "lib"))
+from bigquery_helpers import get_standard_args, execute_query
+
+def test_connection(config):
     """Test BigQuery connection."""
     try:
-        # Use PROJECT_ID from environment if available
-        project_id = os.environ.get('PROJECT_ID')
-        client = bigquery.Client(project=project_id)
+        client = bigquery.Client(project=config.project_id)
         print("✓ BigQuery client initialized successfully")
-        
-        if project_id:
-            print(f"✓ Using project: {project_id}")
+        print(f"✓ Using project: {config.project_id}")
         
         # List datasets to verify connection
         datasets = list(client.list_datasets())
@@ -46,16 +48,15 @@ def test_connection():
         """
         
         print("Running test query...")
-        query_job = client.query(query)
-        results = query_job.result()
+        results_df = execute_query(client, query, "Shakespeare test query")
         
         print("✓ Query executed successfully!")
         print("\nSample results:")
         print(f"{'Word':<15} {'Count':<8} Corpus")
         print("-" * 40)
         
-        for row in results:
-            print(f"{row.word:<15} {row.word_count:<8} {row.corpus}")
+        for _, row in results_df.iterrows():
+            print(f"{row['word']:<15} {row['word_count']:<8} {row['corpus']}")
         
         print(f"\n✓ BigQuery connection and query test completed successfully!")
         return True
@@ -64,11 +65,18 @@ def test_connection():
         print(f"✗ BigQuery connection failed: {e}")
         return False
 
-if __name__ == "__main__":
+def main():
+    """Main function to test BigQuery connection."""
+    # Parse command line arguments using standard helper
+    config, dry_run = get_standard_args("Test BigQuery connection and basic functionality")
+    
     print("Testing BigQuery connection...")
-    success = test_connection()
+    success = test_connection(config)
     if success:
         print("\n🎉 BigQuery setup is working correctly!")
     else:
         print("\n❌ BigQuery setup needs attention.")
         exit(1)
+
+if __name__ == "__main__":
+    main()

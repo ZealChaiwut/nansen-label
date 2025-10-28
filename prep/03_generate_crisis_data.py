@@ -3,16 +3,17 @@
 Generate Milestone 2 (M2) crisis detection data for Phoenix Flipper project.
 Creates crisis events with contrarian buy windows.
 """
-import argparse
 import os
-from collections import namedtuple
+import sys
+from pathlib import Path
 from google.cloud import bigquery
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 
-# Configuration container for BigQuery project and dataset
-BigQueryConfig = namedtuple('BigQueryConfig', ['project_id', 'dataset_id'])
+# Add lib directory to path for imports
+sys.path.append(str(Path(__file__).parent.parent / "lib"))
+from bigquery_helpers import get_standard_args, load_to_bigquery_table
 
 
 
@@ -119,101 +120,60 @@ def generate_crisis_events(count=6):
     return pd.DataFrame(data)
 
 
-def load_to_bigquery(df, config, table_name):
-    """Load DataFrame to BigQuery table."""
-    if len(df) == 0:
-        print(f"⚠️ No data to load for {table_name}")
-        return
-    
-    client = bigquery.Client(project=config.project_id)
-    table_id = f"{config.project_id}.{config.dataset_id}.{table_name}"
-    
-    job_config = bigquery.LoadJobConfig(
-        write_disposition="WRITE_TRUNCATE",
-        create_disposition="CREATE_IF_NEEDED"
-    )
-    
-    job = client.load_table_from_dataframe(df, table_id, job_config=job_config)
-    job.result()
-    
-    table = client.get_table(table_id)
-    print(f"✓ Loaded {table.num_rows} rows to {table_name}")
-
-
 def get_args():
-    """Parse command line arguments."""
-    # Get defaults from environment variables if available
-    default_project = os.environ.get('PROJECT_ID')
-    default_dataset = os.environ.get('DATASET_ID')
-    default_target = f"{default_project}.{default_dataset}" if default_project and default_dataset else None
+    """Parse command line arguments with custom --count option."""
+    import argparse
     
-    parser = argparse.ArgumentParser(
-        description="Generate Milestone 2 (M2) crisis detection data: crisis events with buy windows"
-    )
-    parser.add_argument(
-        "--target",
-        default=default_target,
-        required=default_target is None,
-        help='BigQuery target in format PROJECT_ID.DATASET_ID' + 
-             (f' (default: {default_target})' if default_target else ' (required)')
-    )
-    parser.add_argument(
-        "--count",
-        type=int,
-        default=6,
-        help="Number of crisis events to generate (default: 6 - covers all real events)"
-    )
+    project_id = os.environ.get('PROJECT_ID', '')
+    dataset_id = os.environ.get('DATASET_ID', '')
+    default_target = f"{project_id}.{dataset_id}" if project_id and dataset_id else ""
     
-    return parser.parse_args()
+    parser = argparse.ArgumentParser(description="Generate crisis detection data with buy windows")
+    
+    parser.add_argument('--target', 
+                       required=not bool(default_target),
+                       default=default_target,
+                       help='Target in format PROJECT_ID.DATASET_ID')
+    
+    parser.add_argument("--count",
+                       type=int,
+                       default=6,
+                       help="Number of crisis events to generate (default: 6)")
+    
+    args = parser.parse_args()
+    
+    if '.' not in args.target:
+        raise ValueError("Target must be in format PROJECT_ID.DATASET_ID")
+    
+    from bigquery_helpers import BigQueryConfig
+    project_id, dataset_id = args.target.split('.', 1)
+    return BigQueryConfig(project_id=project_id, dataset_id=dataset_id), args.count
 
 
 def main():
-    # Parse command line arguments
-    args = get_args()
-    
-    # Parse target format: PROJECT_ID.DATASET_ID
     try:
-        target_parts = args.target.split('.')
-        if len(target_parts) != 2:
-            raise ValueError(f"Invalid target format. Expected PROJECT_ID.DATASET_ID, got: {args.target}")
+        config, count = get_args()
         
-        project_id, dataset_id = target_parts
+        print("Generating Crisis Detection Data")
+        print("=" * 40)
+        print(f"Project: {config.project_id}")
+        print(f"Dataset: {config.dataset_id}")
+        print(f"Crisis events to generate: {count}")
+        print()
         
-        # Validate parts are not empty
-        if not project_id.strip() or not dataset_id.strip():
-            raise ValueError("Project ID and Dataset ID cannot be empty")
-            
-        # Create configuration object
-        config = BigQueryConfig(project_id=project_id.strip(), dataset_id=dataset_id.strip())
-            
-    except ValueError as e:
-        print(f"✗ Error parsing target: {e}")
-        print("Expected format: PROJECT_ID.DATASET_ID")
-        print("Example: --target nansen-label.phoenix_flipper")
-        exit(1)
-    
-    print("=" * 80)
-    print("Generating Milestone 2 (M2) Crisis Detection Data")
-    print("=" * 80)
-    print(f"Project: {config.project_id}")
-    print(f"Dataset: {config.dataset_id}")
-    print(f"Crisis events to generate: {args.count}")
-    print()
-    
-    try:
         # Create dataset
         create_dataset_if_not_exists(config)
         
         # Generate crisis events data
-        df_crisis = generate_crisis_events(count=args.count)
-        load_to_bigquery(df_crisis, config, "crisis_events_with_window")
+        df_crisis = generate_crisis_events(count=count)
+        
+        # No schema needed since CREATE_IF_NEEDED is used
+        load_to_bigquery_table(df_crisis, config, "crisis_events_with_window", schema=None)
         
         print(f"✓ Crisis events generation complete: {len(df_crisis)} events")
         
     except Exception as e:
         print(f"\n✗ Error: {e}")
-        import traceback
-        traceback.print_exc()
         exit(1)
 
 

@@ -3,38 +3,14 @@
 Phoenix Flipper Data Quality Verification
 Verifies that generated mock data is usable and can join with real data sources.
 """
-import argparse
 import sys
+from pathlib import Path
 from google.cloud import bigquery
 import pandas as pd
-from collections import namedtuple
 
-# Configuration container for BigQuery project and dataset
-BigQueryConfig = namedtuple('BigQueryConfig', ['project_id', 'dataset_id'])
-
-
-def get_args():
-    """Parse command line arguments."""
-    parser = argparse.ArgumentParser(
-        description="Verify Phoenix Flipper mock data quality and joinability"
-    )
-    
-    parser.add_argument(
-        '--target',
-        required=True,
-        help='Target in format PROJECT_ID.DATASET_ID'
-    )
-    
-    return parser.parse_args()
-
-
-def parse_target(target):
-    """Parse target argument into project and dataset IDs."""
-    if '.' not in target:
-        raise ValueError("Target must be in format PROJECT_ID.DATASET_ID")
-    
-    project_id, dataset_id = target.split('.', 1)
-    return BigQueryConfig(project_id=project_id, dataset_id=dataset_id)
+# Add lib directory to path for imports
+sys.path.append(str(Path(__file__).parent.parent / "lib"))
+from bigquery_helpers import get_standard_args, BigQueryConfig, execute_query
 
 
 def verify_crisis_price_join(config):
@@ -94,7 +70,7 @@ def verify_crisis_price_join(config):
     """
     
     try:
-        results_df = client.query(query).to_dataframe()
+        results_df = execute_query(client, query, "crisis-price join analysis")
         
         if len(results_df) == 0:
             print("❌ No joinable crisis-price data found")
@@ -141,7 +117,7 @@ def verify_dex_pools_ethereum_logs(config):
     """
     
     try:
-        pools_df = client.query(pools_query).to_dataframe()
+        pools_df = execute_query(client, pools_query, "DEX pools data")
         
         if len(pools_df) == 0:
             print("❌ No DEX pools found in our dataset")
@@ -168,7 +144,7 @@ def verify_dex_pools_ethereum_logs(config):
         """
         
         print("🔍 Querying Ethereum logs for all pool addresses...")
-        logs_df = client.query(logs_query).to_dataframe()
+        logs_df = execute_query(client, logs_query, "Ethereum logs verification")
         
         # Join results with our pool data
         results_df = pools_df.merge(
@@ -240,7 +216,7 @@ def verify_data_completeness(config):
             FROM `{config.project_id}.{config.dataset_id}.{table_name}`
             """
             
-            result = client.query(count_query).to_dataframe()
+            result = execute_query(client, count_query, f"table {table_name} row count")
             row_count = result.iloc[0]['row_count']
             
             if row_count > 0:
@@ -258,13 +234,8 @@ def verify_data_completeness(config):
 
 def main():
     """Run data quality verification."""
-    args = get_args()
-    
-    try:
-        config = parse_target(args.target)
-    except ValueError as e:
-        print(f"❌ Error: {e}")
-        sys.exit(1)
+    # Parse command line arguments using standard helper
+    config, dry_run = get_standard_args("Verify Phoenix Flipper mock data quality and joinability")
     
     print("🔍 Phoenix Flipper Data Quality Verification")
     print("=" * 60)

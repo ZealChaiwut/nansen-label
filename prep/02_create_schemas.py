@@ -4,14 +4,14 @@ Create BigQuery table schemas for Phoenix Flipper project.
 Executes all SQL schema files with option to drop existing tables.
 """
 import os
-import argparse
+import sys
 import glob
 from pathlib import Path
-from collections import namedtuple
 from google.cloud import bigquery
 
-# Configuration container for BigQuery project and dataset
-BigQueryConfig = namedtuple('BigQueryConfig', ['project_id', 'dataset_id'])
+# Add lib directory to path for imports
+sys.path.append(str(Path(__file__).parent.parent / "lib"))
+from bigquery_helpers import get_standard_args, execute_query
 
 
 
@@ -128,65 +128,45 @@ def execute_schema_file(client, config, file_path, drop_tables=False):
 
 
 def get_args():
-    """Parse command line arguments."""
-    # Get defaults from environment variables if available
-    default_project = os.environ.get('PROJECT_ID')
-    default_dataset = os.environ.get('DATASET_ID')
-    default_target = f"{default_project}.{default_dataset}" if default_project and default_dataset else None
+    """Parse command line arguments with custom --drop option."""
+    import argparse
     
-    parser = argparse.ArgumentParser(
-        description="Create BigQuery schemas for Phoenix Flipper project"
-    )
-    parser.add_argument(
-        "--drop",
-        action="store_true",
-        help="Drop existing tables before creating new ones"
-    )
-    parser.add_argument(
-        "--target",
-        default=default_target,
-        required=default_target is None,
-        help='BigQuery target in format PROJECT_ID.DATASET_ID' + 
-             (f' (default: {default_target})' if default_target else ' (required)')
-    )
+    project_id = os.environ.get('PROJECT_ID', '')
+    dataset_id = os.environ.get('DATASET_ID', '')
+    default_target = f"{project_id}.{dataset_id}" if project_id and dataset_id else ""
     
-    return parser.parse_args()
+    parser = argparse.ArgumentParser(description="Create BigQuery schemas for Phoenix Flipper project")
+    
+    parser.add_argument('--target', 
+                       required=not bool(default_target),
+                       default=default_target,
+                       help='Target in format PROJECT_ID.DATASET_ID')
+    
+    parser.add_argument("--drop",
+                       action="store_true",
+                       help="Drop existing tables before creating new ones")
+    
+    args = parser.parse_args()
+    
+    if '.' not in args.target:
+        raise ValueError("Target must be in format PROJECT_ID.DATASET_ID")
+    
+    from bigquery_helpers import BigQueryConfig
+    project_id, dataset_id = args.target.split('.', 1)
+    return BigQueryConfig(project_id=project_id, dataset_id=dataset_id), args.drop
 
 
 def main():
-    # Parse command line arguments
-    args = get_args()
-    
-    # Parse target format: PROJECT_ID.DATASET_ID
     try:
-        target_parts = args.target.split('.')
-        if len(target_parts) != 2:
-            raise ValueError(f"Invalid target format. Expected PROJECT_ID.DATASET_ID, got: {args.target}")
+        config, drop_tables = get_args()
         
-        project_id, dataset_id = target_parts
+        print("Creating BigQuery Schemas for Phoenix Flipper Project")
+        print("=" * 60)
+        print(f"Project: {config.project_id}")
+        print(f"Dataset: {config.dataset_id}")
+        print(f"Drop existing tables: {'Yes' if drop_tables else 'No'}")
+        print()
         
-        # Validate parts are not empty
-        if not project_id.strip() or not dataset_id.strip():
-            raise ValueError("Project ID and Dataset ID cannot be empty")
-            
-        # Create configuration object
-        config = BigQueryConfig(project_id=project_id.strip(), dataset_id=dataset_id.strip())
-            
-    except ValueError as e:
-        print(f"✗ Error parsing target: {e}")
-        print("Expected format: PROJECT_ID.DATASET_ID")
-        print("Example: --target nansen-label.phoenix_flipper")
-        exit(1)
-    
-    print("=" * 80)
-    print("Creating BigQuery Schemas for Phoenix Flipper Project")
-    print("=" * 80)
-    print(f"Project: {config.project_id}")
-    print(f"Dataset: {config.dataset_id}")
-    print(f"Drop existing tables: {'Yes' if args.drop else 'No'}")
-    print()
-    
-    try:
         # Initialize BigQuery client
         client = bigquery.Client(project=config.project_id)
         
@@ -198,7 +178,7 @@ def main():
         
         # Execute each schema file
         for file_path in schema_files:
-            execute_schema_file(client, config, file_path, args.drop)
+            execute_schema_file(client, config, file_path, drop_tables)
         
         print(f"✓ Created {len(schema_files)} schemas successfully")
         
@@ -212,8 +192,6 @@ def main():
         
     except Exception as e:
         print(f"\n✗ Error: {e}")
-        import traceback
-        traceback.print_exc()
         exit(1)
 
 

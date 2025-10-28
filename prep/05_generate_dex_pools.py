@@ -3,10 +3,8 @@
 Generate DEX pools data for Phoenix Flipper project.
 Creates dim_dex_pools from real Ethereum logs based on crisis tokens.
 """
-import argparse
 import os
 import sys
-from collections import namedtuple
 from pathlib import Path
 from google.cloud import bigquery
 import pandas as pd
@@ -14,10 +12,7 @@ import numpy as np
 
 # Add lib directory to path for imports
 sys.path.append(str(Path(__file__).parent.parent / "lib"))
-from bigquery_helpers import create_query_with_udfs, ETHEREUM_CONSTANTS
-
-# Configuration container for BigQuery project and dataset
-BigQueryConfig = namedtuple('BigQueryConfig', ['project_id', 'dataset_id'])
+from bigquery_helpers import get_standard_args, BigQueryConfig, execute_query, load_to_bigquery_table, create_query_with_udfs, ETHEREUM_CONSTANTS
 
 
 def create_dataset_if_not_exists(config):
@@ -37,6 +32,7 @@ def create_dataset_if_not_exists(config):
 
 def generate_dim_dex_pools(config):
     """Generate DEX pool data using REAL pool addresses from BigQuery public data."""
+    from google.cloud import bigquery
     
     # First, get the crisis tokens from the crisis_events_with_window table
     print("🔍 Reading crisis tokens from crisis_events_with_window table...")
@@ -49,7 +45,7 @@ def generate_dim_dex_pools(config):
     """
     
     try:
-        crisis_result = client.query(crisis_query).to_dataframe()
+        crisis_result = execute_query(client, crisis_query, "crisis events")
         crisis_tokens = crisis_result['token_address'].tolist()
         print(f"✅ Found {len(crisis_tokens)} crisis tokens")
     except Exception as e:
@@ -58,9 +54,7 @@ def generate_dim_dex_pools(config):
     
     # Get constants from shared library
     UNISWAP_V2_FACTORY = ETHEREUM_CONSTANTS['UNISWAP_V2_FACTORY']
-    UNISWAP_V3_FACTORY = ETHEREUM_CONSTANTS['UNISWAP_V3_FACTORY']
     V2_PAIR_CREATED_TOPIC = ETHEREUM_CONSTANTS['V2_PAIR_CREATED_TOPIC']
-    V3_POOL_CREATED_TOPIC = ETHEREUM_CONSTANTS['V3_POOL_CREATED_TOPIC']
     BASE_TOKEN_SYMBOLS = ETHEREUM_CONSTANTS['BASE_TOKENS']
     
     # Get base token addresses from the dictionary
@@ -76,7 +70,7 @@ def generate_dim_dex_pools(config):
     # Add base token symbols
     token_symbols.update(BASE_TOKEN_SYMBOLS)
     
-    print(f"🔍 Querying Uniswap V2/V3 pools for {len(crisis_tokens)} crisis tokens...")
+    print(f"🔍 Querying Uniswap V2 pools for {len(crisis_tokens)} crisis tokens...")
     client = bigquery.Client()
     
     # Create SQL arrays for token filtering
@@ -92,17 +86,10 @@ def generate_dim_dex_pools(config):
       'ethereum' as chain,
       EXTRACT_TOKEN_ADDRESS(topics, 1) AS token0_address,
       EXTRACT_TOKEN_ADDRESS(topics, 2) AS token1_address,
-      CASE 
-        WHEN address = '{UNISWAP_V2_FACTORY}' THEN EXTRACT_V2_PAIR_ADDRESS(data)
-        WHEN address = '{UNISWAP_V3_FACTORY}' THEN EXTRACT_V3_POOL_ADDRESS(data)
-        ELSE NULL
-      END AS pool_address
+      EXTRACT_V2_PAIR_ADDRESS(data) AS pool_address
     FROM `bigquery-public-data.crypto_ethereum.logs`
-    WHERE address IN ('{UNISWAP_V2_FACTORY}', '{UNISWAP_V3_FACTORY}')
-      AND topics[SAFE_OFFSET(0)] IN (
-        '{V2_PAIR_CREATED_TOPIC}',  -- V2 PairCreated
-        '{V3_POOL_CREATED_TOPIC}'   -- V3 PoolCreated
-      )
+    WHERE address = '{UNISWAP_V2_FACTORY}'
+      AND topics[SAFE_OFFSET(0)] = '{V2_PAIR_CREATED_TOPIC}'  -- V2 PairCreated
       AND block_timestamp >= '2020-01-01'
       AND (
         (EXTRACT_TOKEN_ADDRESS(topics, 1) IN ('{crisis_tokens_sql}') 
@@ -118,8 +105,7 @@ def generate_dim_dex_pools(config):
     query = create_query_with_udfs(main_query)
     
     try:
-        query_job = client.query(query)
-        real_pools_df = query_job.to_dataframe()
+        real_pools_df = execute_query(client, query, "DEX pools from Ethereum logs")
         
         if len(real_pools_df) == 0:
             print("❌ No DEX pools found for crisis tokens")
@@ -189,51 +175,9 @@ def load_to_bigquery(df, config, table_name):
     print(f"✓ Loaded {table.num_rows} rows to {table_name}")
 
 
-def get_args():
-    """Parse command line arguments."""
-    # Get defaults from environment variables if available
-    default_project = os.environ.get('PROJECT_ID')
-    default_dataset = os.environ.get('DATASET_ID')
-    default_target = f"{default_project}.{default_dataset}" if default_project and default_dataset else None
-    
-    parser = argparse.ArgumentParser(
-        description="Generate DEX pools data from real Ethereum logs"
-    )
-    parser.add_argument(
-        "--target",
-        default=default_target,
-        required=default_target is None,
-        help='BigQuery target in format PROJECT_ID.DATASET_ID' + 
-             (f' (default: {default_target})' if default_target else ' (required)')
-    )
-    
-    return parser.parse_args()
-
-
 def main():
-    # Parse command line arguments
-    args = get_args()
-    
-    # Parse target format: PROJECT_ID.DATASET_ID
-    try:
-        target_parts = args.target.split('.')
-        if len(target_parts) != 2:
-            raise ValueError(f"Invalid target format. Expected PROJECT_ID.DATASET_ID, got: {args.target}")
-        
-        project_id, dataset_id = target_parts
-        
-        # Validate parts are not empty
-        if not project_id.strip() or not dataset_id.strip():
-            raise ValueError("Project ID and Dataset ID cannot be empty")
-            
-        # Create configuration object
-        config = BigQueryConfig(project_id=project_id.strip(), dataset_id=dataset_id.strip())
-            
-    except ValueError as e:
-        print(f"✗ Error parsing target: {e}")
-        print("Expected format: PROJECT_ID.DATASET_ID")
-        print("Example: --target nansen-label.phoenix_flipper")
-        exit(1)
+    # Parse command line arguments using standard helper
+    config, dry_run = get_standard_args("Generate DEX pools data from real Ethereum logs")
     
     print("=" * 80)
     print("Generating DEX Pools Data from Real Ethereum Logs")
@@ -249,7 +193,15 @@ def main():
         
         # Generate DEX pools data
         df_pools = generate_dim_dex_pools(config)
-        load_to_bigquery(df_pools, config, "dim_dex_pools")
+        
+        # Load to BigQuery using helper function
+        load_to_bigquery_table(
+            df_pools, 
+            config, 
+            "dim_dex_pools", 
+            schema=None,  # Let BigQuery infer schema
+            dry_run=dry_run
+        )
         
         print(f"✓ DEX pools generation complete: {len(df_pools)} pools")
         

@@ -8,6 +8,8 @@ A BigQuery-based labeling system to identify "Phoenix Flipper" wallets that buy 
 phoenix-flipper/
 ├── README.md                    # This overview
 ├── .gitignore                   # Git ignore rules
+├── 01_identify_crisis_buyers.py    # Step 1: Identify crisis buyers
+├── 02_calculate_pnl_leaderboard.py # Step 2: Calculate P&L and leaderboard
 │
 ├── prep/                        # Data preparation scripts
 │   ├── requirements.txt         # Python dependencies
@@ -19,9 +21,6 @@ phoenix-flipper/
 │   ├── 05_generate_dex_pools.py # Generate DEX pools from Ethereum logs
 │   ├── 06_verify_data_quality.py # Verify data joins and quality
 │   └── README.md               # Setup instructions
-│
-├── identify_crisis_buyers.py    # Milestone 3: Identify crisis buyers
-├── calculate_pnl_leaderboard.py # Milestone 4: Calculate P&L and leaderboard
 │
 ├── lib/                        # Shared utilities
 │   ├── __init__.py             # Python package init
@@ -55,61 +54,89 @@ The preparation scripts will:
 ```bash
 # Install dependencies & run data preparation pipeline
 pip install -r prep/requirements.txt
-python prep/00_run_prep.py --project YOUR_PROJECT --dataset phoenix_flipper
+python prep/00_run_prep.py --target nansen-label.phoenix_flipper
 
-# Run crisis buyers analysis (Milestone 3)
-python identify_crisis_buyers.py --target YOUR_PROJECT.phoenix_flipper
+# Step 1: Run crisis buyers analysis
+python 01_identify_crisis_buyers.py --target nansen-label.phoenix_flipper
 
-# Calculate P&L and show leaderboard (Milestone 4)
-python calculate_pnl_leaderboard.py --target YOUR_PROJECT.phoenix_flipper
-
-# With custom options
-python calculate_pnl_leaderboard.py --target YOUR_PROJECT.phoenix_flipper --top-n 20 --recovery-days 60 --min-profit 25.0
-
-# Or run dry-run to test without writing to BigQuery
-python identify_crisis_buyers.py --target YOUR_PROJECT.phoenix_flipper --dry-run
-python calculate_pnl_leaderboard.py --target YOUR_PROJECT.phoenix_flipper --dry-run
+# Step 2: Calculate P&L and show leaderboard
+python 02_calculate_pnl_leaderboard.py --target nansen-label.phoenix_flipper
 ```
 
-## Pipeline Overview
+**Core Milestones Overview:**
 
-### Data Preparation (prep/)
-1. **Crisis Detection** → Identify market crisis events with buy windows
-2. **Real Pool Discovery** → Query Ethereum for actual Uniswap pool addresses  
-3. **Price Generation** → Create realistic price movements around crisis events
-4. **Data Validation** → Ensure crisis-price joins and pool existence
+1.  **Identify Potential Crisis Events:** Find tokens that had a sharp, token-specific price crash or liquidity drain on DEXs, filtering out general market drops.
+2.  **Define the Contrarian Buy Window:** Determine the specific timeframe *after* the initial crash when a "Phoenix Flipper" would likely buy (e.g., 12-84 hours post-crash).
+3.  **Identify Wallets Buying During the Window:** Find the specific wallets that acquired the crashed token via DEX swaps within that defined timeframe.
+4.  **Measure Recovery & Estimate Profit:** Check if the token's price recovered significantly later and estimate if the wallets identified in M3 achieved substantial gains (e.g., >3x).
+5.  **Assign the "Phoenix Flipper" Label:** Tag the wallets meeting the criteria from M4 in the final labels table.
+
+---
+
+This implementation focuses on demonstrating the core **on-chain analysis and P&L estimation logic** (Milestones 3 & 4) for the "Phoenix Flipper" label, producing a ranked list of the top 100 potential flipper wallets based on estimated gains.
+
+**Data Simulation & Prep (Approx. 2 Hour):**
+
+* **Milestone 2 (Simulated First):** We will **simulate** the output of the crisis event detection. This involves defining a small set of specific `crisis_token_address`-`pool_address` pairs (targeting Uniswap V2) and their corresponding `buy_window_start`/`buy_window_end` timestamps directly in the SQL using `WITH` clauses (CTEs).
+* **Milestone 1 (Simulated Second):** Pool metadata (`dim_dex_pools`) and necessary daily price/liquidity data (`fct_pool_liquidity_daily`) for *only* the specific pools/tokens/dates identified in the simulated M2 output will be **simulated** using CTEs.
+
+**Implementation Scope (Approx. 2 Hours):**
 
 ### Analysis Phase
-5. **Wallet Analysis** → Identify buyers during crisis windows from Ethereum logs (`identify_crisis_buyers.py`)
+Step 1. **Crisis Buyers** → Identify buyers during crisis windows from Ethereum logs (`01_identify_crisis_buyers.py`)
    - Queries all available pools with configurable date range and transaction limits
+   - Stores individual buy transactions in `stg_crisis_buyers` table
    - Supports `--dry-run` for testing without writing to BigQuery (recommended for first run)
-6. **Profit Calculation** → Calculate P&L for recovery periods (`calculate_pnl_leaderboard.py`)
+
+Step 2. **P&L Leaderboard** → Calculate profit and loss for recovery periods (`02_calculate_pnl_leaderboard.py`)
    - Finds peak recovery prices within 90-day windows after purchases
    - Calculates profit percentages and USD amounts for each transaction
    - Shows top 10 leaderboard with detailed transaction breakdown
-   - Stores profitable flippers in `stg_profitable_flippers` table
-7. **Label Assignment** → (Future) Tag profitable "Phoenix Flipper" wallets
+   - Stores profitable flippers above 10% profit threshold in `stg_profitable_flippers` table
+
+**Out of Scope:**
+
+* Building the full, automated Crisis Event Detection pipeline (M1/M2).
+* Building robust, persistent helper tables (`dim_dex_pools`, `fct_pool_liquidity_daily`).
+* Implementing detailed holding checks or precise P&L accounting.
+* **Calculating *Realized* PnL:** The P&L estimation (M4) is based *only* on the buy activity during the crisis window and an estimated recovery price. It does **not track subsequent sell transactions** due to the complexity and potential data volume involved in tracking individual token disposals.
+* Integrating into a final `dim_wallet_labels` table (M5).
+* Unit Testing & Data Quality Monitoring implementation.
+* Analysis of DEX pools beyond **Uniswap V2** (e.g., SushiSwap, Curve).
 
 ## Architecture Overview
 
-_[To be filled: Data pipeline architecture, BigQuery schema design, ETL flow, data modeling approach]_
+**Simple Python + BigQuery Pipeline**
+
+- **Data Sources:** Ethereum blockchain logs (via BigQuery public datasets) + generated crisis events
+- **Processing:** Python scripts orchestrate BigQuery SQL transformations and analysis
+- **Storage:** All data stored in BigQuery tables with date partitioning for performance
+- **Pipeline Flow:** Sequential Python scripts → BigQuery operations → Staged results → Final labels
+- **Schema Design:** Star schema with dimension tables (`dim_*`) and staging tables (`stg_*`)
+- **Scalability:** Serverless BigQuery handles large-scale blockchain data processing
 
 ## Technology Choices and Trade-offs
 
-**Approach**: BigQuery SQL via Python Client (+ Pandas for results) & BigQuery UDFs
+**Approach**: BigQuery via Python (Google SDK)
 
 ### Pros
-- **Scalability**: Leverages BigQuery's serverless engine for core SQL and UDF execution 🚀
+- **Scalability**: Leverages BigQuery's serverless engine for core SQL and UDF execution
 - **Cost-Effective Processing**: Pay-per-query model efficient for analytics. UDF compute included
 - **Direct Access to Public Data**: Easily queries Google's public blockchain datasets
-- **Python Flexibility**: Python client orchestrates SQL/UDFs. Can use SQL, JS, or potentially Python for UDF logic, extending SQL capabilities server-side
+- **Python Flexibility**: Python client orchestrates SQL/UDFs. Can use SQL, or Python for UDF logic for debugging and development easeness
 - **GCP Integration**: Seamless integration with other GCP services
 
 ### Cons
 - **SQL Dependency**: Core logic is still SQL-heavy, but UDFs help encapsulate complex logic
-- **UDF Complexity/Limitations**: Writing, deploying, and managing UDFs adds complexity (especially JS/Python UDFs). UDFs have performance limits and resource constraints. Debugging UDFs can be harder than pure SQL
-- **Potential Egress Costs**: Pulling large final results into local Pandas still incurs costs/bottlenecks
+- **Local limitation and bottlenecks**: Using Python on local and pandas has limitation on the memory and bottlenecks
 
-## Future Improvements Roadmap
+## Future Works:
 
-_[To be filled: Planned features, scalability improvements, additional data sources, model enhancements]_
+- **Automated Crisis Detection** → Build full M1/M2 pipeline for real-time crisis event identification
+- **Multi-DEX Support** → Expand beyond Uniswap V2 to include SushiSwap, Curve, and other DEXs
+- **Realized P&L Tracking** → Track actual sell transactions to calculate true realized profits
+- **Advanced Wallet Profiling** → Implement detailed holding checks and precise P&L accounting
+- **Production Label Pipeline** → Complete M5 integration into `dim_wallet_labels` table
+- **Data Quality Monitoring** → Add unit testing and automated data validation systems
+- **Scalable Infrastructure** → Move from local Python/pandas to distributed processing for large datasets
+

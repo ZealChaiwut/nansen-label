@@ -3,16 +3,17 @@
 Generate token price history data for Phoenix Flipper project.
 Creates dim_token_price_history based on crisis_events_with_window.
 """
-import argparse
 import os
-from collections import namedtuple
+import sys
+from pathlib import Path
 from google.cloud import bigquery
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 
-# Configuration container for BigQuery project and dataset
-BigQueryConfig = namedtuple('BigQueryConfig', ['project_id', 'dataset_id'])
+# Add lib directory to path for imports
+sys.path.append(str(Path(__file__).parent.parent / "lib"))
+from bigquery_helpers import get_standard_args, BigQueryConfig, load_to_bigquery_table, execute_query
 
 
 def create_dataset_if_not_exists(config):
@@ -43,7 +44,7 @@ def generate_token_price_history(config):
     """
     
     try:
-        crisis_df = client.query(crisis_query).to_dataframe()
+        crisis_df = execute_query(client, crisis_query, "crisis events")
         print(f"✅ Found {len(crisis_df)} crisis events")
     except Exception as e:
         print(f"❌ Crisis events table not found: {e}")
@@ -143,71 +144,10 @@ def generate_token_price_history(config):
     return pd.DataFrame(all_price_data)
 
 
-def load_to_bigquery(df, config, table_name):
-    """Load DataFrame to BigQuery table."""
-    if len(df) == 0:
-        raise Exception(f"No data generated for table {table_name}")
-    
-    client = bigquery.Client(project=config.project_id)
-    table_id = f"{config.project_id}.{config.dataset_id}.{table_name}"
-    
-    job_config = bigquery.LoadJobConfig(
-        write_disposition="WRITE_TRUNCATE",
-        create_disposition="CREATE_IF_NEEDED"
-    )
-    
-    job = client.load_table_from_dataframe(df, table_id, job_config=job_config)
-    job.result()
-    
-    table = client.get_table(table_id)
-    print(f"✓ Loaded {table.num_rows} rows to {table_name}")
-
-
-def get_args():
-    """Parse command line arguments."""
-    # Get defaults from environment variables if available
-    default_project = os.environ.get('PROJECT_ID')
-    default_dataset = os.environ.get('DATASET_ID')
-    default_target = f"{default_project}.{default_dataset}" if default_project and default_dataset else None
-    
-    parser = argparse.ArgumentParser(
-        description="Generate token price history data based on crisis events"
-    )
-    parser.add_argument(
-        "--target",
-        default=default_target,
-        required=default_target is None,
-        help='BigQuery target in format PROJECT_ID.DATASET_ID' + 
-             (f' (default: {default_target})' if default_target else ' (required)')
-    )
-    
-    return parser.parse_args()
-
 
 def main():
-    # Parse command line arguments
-    args = get_args()
-    
-    # Parse target format: PROJECT_ID.DATASET_ID
-    try:
-        target_parts = args.target.split('.')
-        if len(target_parts) != 2:
-            raise ValueError(f"Invalid target format. Expected PROJECT_ID.DATASET_ID, got: {args.target}")
-        
-        project_id, dataset_id = target_parts
-        
-        # Validate parts are not empty
-        if not project_id.strip() or not dataset_id.strip():
-            raise ValueError("Project ID and Dataset ID cannot be empty")
-            
-        # Create configuration object
-        config = BigQueryConfig(project_id=project_id.strip(), dataset_id=dataset_id.strip())
-            
-    except ValueError as e:
-        print(f"✗ Error parsing target: {e}")
-        print("Expected format: PROJECT_ID.DATASET_ID")
-        print("Example: --target nansen-label.phoenix_flipper")
-        exit(1)
+    # Parse command line arguments using standard helper
+    config, dry_run = get_standard_args("Generate token price history data based on crisis events")
     
     print("=" * 80)
     print("Generating Token Price History Data")
@@ -223,7 +163,15 @@ def main():
         
         # Generate token price history data
         df_price_history = generate_token_price_history(config)
-        load_to_bigquery(df_price_history, config, "dim_token_price_history")
+        
+        # Load to BigQuery using helper function
+        load_to_bigquery_table(
+            df_price_history, 
+            config, 
+            "dim_token_price_history", 
+            schema=None,  # Let BigQuery infer schema
+            dry_run=dry_run
+        )
         
         print(f"✓ Price history generation complete: {len(df_price_history)} records")
         
