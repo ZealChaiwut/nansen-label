@@ -20,6 +20,8 @@ phoenix-flipper/
 │   ├── 06_verify_data_quality.py # Verify data joins and quality
 │   └── README.md               # Setup instructions
 │
+├── identify_crisis_buyers.py    # Milestone 3: Identify crisis buyers
+│
 ├── lib/                        # Shared utilities
 │   ├── __init__.py             # Python package init
 │   ├── bigquery_helpers.py     # BigQuery utility functions
@@ -50,18 +52,29 @@ The preparation scripts will:
 ## Quick Start
 
 ```bash
-# Install dependencies & run complete pipeline
+# Install dependencies & run data preparation pipeline
 pip install -r prep/requirements.txt
 python prep/00_run_prep.py --project YOUR_PROJECT --dataset phoenix_flipper
+
+# Run crisis buyers analysis (Milestone 3)
+python identify_crisis_buyers.py --target YOUR_PROJECT.phoenix_flipper
+
+# Or run dry-run to test without writing to BigQuery
+python identify_crisis_buyers.py --target YOUR_PROJECT.phoenix_flipper --dry-run
 ```
 
 ## Pipeline Overview
 
+### Data Preparation (prep/)
 1. **Crisis Detection** → Identify market crisis events with buy windows
 2. **Real Pool Discovery** → Query Ethereum for actual Uniswap pool addresses  
 3. **Price Generation** → Create realistic price movements around crisis events
 4. **Data Validation** → Ensure crisis-price joins and pool existence
-5. **Wallet Analysis** → (Future) Identify buyers during crisis windows
+
+### Analysis Phase
+5. **Wallet Analysis** → Identify buyers during crisis windows from Ethereum logs (`identify_crisis_buyers.py`)
+   - Queries all available pools with configurable date range and transaction limits
+   - Supports `--dry-run` for testing without writing to BigQuery (recommended for first run)
 6. **Profit Calculation** → (Future) Calculate PnL for recovery periods
 7. **Label Assignment** → (Future) Tag profitable "Phoenix Flipper" wallets
 

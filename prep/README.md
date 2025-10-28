@@ -38,6 +38,7 @@ python prep/00_run_prep.py --project YOUR_PROJECT --dataset phoenix_flipper \
 
 **Quality Verification**: Validates crisis-price joins and confirms all pool addresses exist in Ethereum transaction logs.
 
+
 ## Tables Created
 
 Creates 6 BigQuery tables: DEX pools, price history (partitioned), crisis events (partitioned), staging tables for buyers/flippers, and final wallet labels.
