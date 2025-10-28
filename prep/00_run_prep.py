@@ -104,13 +104,6 @@ def run_command(cmd, description, prompt_after=True):
         return False
 
 
-def prompt_before_step(step_name, description):
-    """Show step information and wait for user confirmation."""
-    print(f"\n{'='*60}")
-    print(f"📝 About to start: {step_name}")
-    print(f"📄 Description: {description}")
-    print(f"{'='*60}")
-    input("Press Enter to start this step... ")
 
 
 def main():
@@ -140,11 +133,15 @@ def main():
     success = True
     interactive = not args.no_prompt
     
+    # Step 0: Install Python dependencies
+    cmd = [sys.executable, "-m", "pip", "install", "-r", str(script_dir / "requirements.txt")]
+    success &= run_command(cmd, "Step 0: Installing Python Dependencies", interactive)
+    if not success:
+        print("❌ Pipeline failed at dependency installation")
+        sys.exit(1)
+    
     # Step 1: Test BigQuery connection (optional)
     if not args.skip_test:
-        if interactive:
-            prompt_before_step("Step 1", "Test BigQuery connection and list available datasets")
-        
         cmd = [sys.executable, str(script_dir / "01_test_bq.py")]
         success &= run_command(cmd, "Step 1: Testing BigQuery Connection", interactive)
         if not success:
@@ -154,10 +151,6 @@ def main():
         print("\n⏭️  Skipping BigQuery connection test")
     
     # Step 2: Create schemas
-    if interactive:
-        drop_msg = " and drop existing tables" if args.hard_reset else ""
-        prompt_before_step("Step 2", f"Create all BigQuery table schemas{drop_msg}")
-    
     cmd = [
         sys.executable, 
         str(script_dir / "02_create_schemas.py"), 
@@ -172,9 +165,6 @@ def main():
         sys.exit(1)
     
     # Step 3: Generate M1 data (DEX pools and price history)
-    if interactive:
-        prompt_before_step("Step 3", f"Generate {args.pools} DEX pools and comprehensive price history data")
-    
     cmd = [
         sys.executable, 
         str(script_dir / "03_generate_m1_data.py"), 
@@ -188,9 +178,6 @@ def main():
         sys.exit(1)
     
     # Step 4: Generate M2 data (crisis events)
-    if interactive:
-        prompt_before_step("Step 4", f"Generate {args.crises} crisis events with buy windows")
-    
     cmd = [
         sys.executable, 
         str(script_dir / "04_generate_m2_data.py"), 
@@ -207,6 +194,7 @@ def main():
     print(f"\n{'='*60}")
     print("🎉 PIPELINE COMPLETED SUCCESSFULLY!")
     print(f"{'='*60}")
+    print(f"✅ Python dependencies installed")
     print(f"✅ All tables created in: {target}")
     print(f"✅ Generated {args.pools} DEX pools")
     print(f"✅ Generated {args.crises} crisis events")
