@@ -3,7 +3,6 @@
 
 CREATE TABLE IF NOT EXISTS `{PROJECT_ID}.{DATASET_ID}.crisis_events_with_window` (
   crisis_id STRING NOT NULL OPTIONS(description="Unique identifier for this specific crisis event"),
-  pool_address STRING NOT NULL OPTIONS(description="DEX pool address where the crisis occurred"),
   token_address STRING NOT NULL OPTIONS(description="Address of the token that experienced the crisis"),
   crisis_date DATE NOT NULL OPTIONS(description="Date when the crisis event was identified"),
   crisis_name STRING OPTIONS(description="Human-readable name describing the crisis event"),

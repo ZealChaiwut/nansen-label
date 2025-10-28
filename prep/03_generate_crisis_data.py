@@ -35,66 +35,51 @@ def generate_crisis_events(count=6):
     """Generate crisis events based on real historical data."""
     np.random.seed(42)
     
-    # Real crisis events with historical data
-    real_crises = [
+    # Popular tokens with guaranteed pools, renamed as crisis tokens for mock data
+    crisis_tokens = [
         {
-            "token_address": "0xf4d2888d29D722226FafA5d9B24F9164cfdF5Bd4",  # LOOKS
-            "token_symbol": "LOOKS",
-            "crisis_name": "Post-Launch Incentive Decline",
+            "token_address": "0x1f9840a85d5af5bf1d1762f925bdaddc4201f984",  # UNI -> CRISIS1
+            "crisis_name": "CRISIS1 Token Market Manipulation",
             "crisis_date": datetime(2022, 3, 15).date(),
-            "window_days": 7
         },
         {
-            "token_address": "0x4d224452801ACEd8B2F0aebE155379bb5D594381",  # APE
-            "token_symbol": "APE", 
-            "crisis_name": "Post-Otherside Land Sale Crash",
+            "token_address": "0x7d1afa7b718fb893db30a3abc0cfc608aacfebb0",  # MATIC -> CRISIS2
+            "crisis_name": "CRISIS2 Token Governance Exploit",
             "crisis_date": datetime(2022, 5, 15).date(),
-            "window_days": 10
         },
         {
-            "token_address": "0x6B3595068778DD592e39A122f4f5a5cF09C90fE2",  # SUSHI
-            "token_symbol": "SUSHI",
-            "crisis_name": "Leadership Crisis & CTO Departure", 
+            "token_address": "0x514910771af9ca656af840dff83e8264ecf986ca",  # LINK -> CRISIS3
+            "crisis_name": "CRISIS3 Token Flash Loan Attack", 
             "crisis_date": datetime(2022, 1, 10).date(),
-            "window_days": 5
         },
         {
-            "token_address": "0xcF6BB5389c92Bdda8a3747Ddb454cB7a64626C63",  # XVS
-            "token_symbol": "XVS",
-            "crisis_name": "Market Manipulation & Liquidations",
+            "token_address": "0xa0b73e1ff0b80914ab6fe0444e65848c4c34450b",  # CRO -> CRISIS4
+            "crisis_name": "CRISIS4 Token Exchange Delisting",
             "crisis_date": datetime(2021, 5, 19).date(),
-            "window_days": 4
         },
         {
-            "token_address": "0x64aa3364F17a4D01c6f1751Fd97C2BD3D7e7f1D5",  # OHM
-            "token_symbol": "OHM",
-            "crisis_name": "DeFi 2.0 Rebase Token Collapse",
+            "token_address": "0x2260fac5e5542a773aa44fbcfedf7c193bc2c599",  # WBTC -> CRISIS5
+            "crisis_name": "CRISIS5 Token Bridge Vulnerability",
             "crisis_date": datetime(2021, 12, 1).date(),
-            "window_days": 14
         },
         {
-            "token_address": "0xD31a59c85aE9D8edEFeC411D448f90841571b89c",  # wSOL
-            "token_symbol": "wSOL",
-            "crisis_name": "FTX Collapse Fallout",
+            "token_address": "0x95ad61b0a150d79219dcf64e1e6cc01f0b64c4ce",  # SHIB -> CRISIS6
+            "crisis_name": "CRISIS6 Token Whale Dumping Event",
             "crisis_date": datetime(2022, 11, 9).date(),
-            "window_days": 8
         }
     ]
     
     data = []
-    for i, crisis in enumerate(real_crises[:count]):
-        # Generate a realistic pool address for this token
-        pool_address = f"0x{''.join(np.random.choice(list('0123456789abcdef'), size=40))}"
+    for i, crisis in enumerate(crisis_tokens[:count]):
+        crisis_id = f"crisis_{i+1:03d}"
         
-        crisis_id = f"{crisis['token_symbol']}_crisis_{crisis['crisis_date'].strftime('%Y%m%d')}"
-        
-        # Calculate buy window
+        # Simple random buy window (3-14 days)
+        window_days = np.random.randint(3, 15)
         window_start = crisis['crisis_date']
-        window_end = crisis['crisis_date'] + timedelta(days=crisis['window_days'])
+        window_end = crisis['crisis_date'] + timedelta(days=window_days)
         
         data.append({
             "crisis_id": crisis_id,
-            "pool_address": pool_address,
             "token_address": crisis["token_address"],
             "crisis_date": crisis["crisis_date"],
             "crisis_name": crisis["crisis_name"],
@@ -103,34 +88,29 @@ def generate_crisis_events(count=6):
             "dt": crisis['crisis_date']
         })
     
-    # If more crises requested than real ones, generate additional mock ones
-    if count > len(real_crises):
-        # Use the real crisis tokens for additional mock events
-        crisis_tokens = [c["token_address"] for c in real_crises]
-        
-        for i in range(len(real_crises), count):
-            token_addr = np.random.choice(crisis_tokens)
-            token_symbol = next(c["token_symbol"] for c in real_crises if c["token_address"] == token_addr)
+    # If more crises requested than available tokens, generate additional mock ones
+    if count > len(crisis_tokens):
+        for i in range(len(crisis_tokens), count):
+            # Pick a random token from existing ones
+            base_crisis = np.random.choice(crisis_tokens)
+            token_addr = base_crisis["token_address"]
             
             # Generate additional crisis in different time period
             days_ago = np.random.randint(60, 400)
             crisis_date = (datetime.now() - timedelta(days=days_ago)).date()
             
-            pool_address = f"0x{''.join(np.random.choice(list('0123456789abcdef'), size=40))}"
-            crisis_id = f"{token_symbol}_additional_{i}_{crisis_date.strftime('%Y%m%d')}"
+            crisis_id = f"crisis_{i+1:03d}"
             
-            # Realistic but varied crisis parameters
-            window_days = np.random.randint(3, 12)
-            
+            # Simple random window
+            window_days = np.random.randint(3, 15)
             window_start = crisis_date
             window_end = crisis_date + timedelta(days=window_days)
             
             data.append({
                 "crisis_id": crisis_id,
-                "pool_address": pool_address,
                 "token_address": token_addr,
                 "crisis_date": crisis_date,
-                "crisis_name": f"{token_symbol} Additional Crisis Event",
+                "crisis_name": f"Additional Crisis Event {i+1}",
                 "window_start_date": window_start,
                 "window_end_date": window_end,
                 "dt": crisis_date
@@ -141,6 +121,12 @@ def generate_crisis_events(count=6):
 
 def load_to_bigquery(df, config, table_name):
     """Load DataFrame to BigQuery table."""
+    # Check for empty DataFrame
+    if len(df) == 0:
+        print(f"⚠️  Skipping {table_name} - no data to load")
+        print(f"💡 This may happen when no crisis events are generated")
+        return
+    
     client = bigquery.Client(project=config.project_id)
     table_id = f"{config.project_id}.{config.dataset_id}.{table_name}"
     

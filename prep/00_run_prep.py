@@ -9,6 +9,9 @@ import sys
 import os
 from pathlib import Path
 
+# Configuration constants
+CRISES = 12
+
 
 def get_args():
     """Parse command line arguments."""
@@ -17,14 +20,14 @@ def get_args():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Run full pipeline with default settings
-  python prep/00_run_pipeline.py --project my-project --dataset phoenix_flipper
+  # Run full pipeline with default settings (50 pools, 12 crises)
+  python prep/00_run_prep.py --project my-project --dataset phoenix_flipper
 
   # Hard reset - drop all tables and recreate everything
-  python prep/00_run_pipeline.py --project my-project --dataset phoenix_flipper --hard-reset
+  python prep/00_run_prep.py --project my-project --dataset phoenix_flipper --hard-reset
 
-  # Custom data generation settings
-  python prep/00_run_pipeline.py --project my-project --dataset phoenix_flipper --pools 100 --crises 10
+  # Data-only mode - skip setup steps
+  python prep/00_run_prep.py --project my-project --dataset phoenix_flipper --data-only
         """
     )
     
@@ -46,20 +49,6 @@ Examples:
         help='Drop all existing tables before recreating (WARNING: destroys existing data)'
     )
     
-    # Data generation options
-    parser.add_argument(
-        '--pools', 
-        type=int, 
-        default=50,
-        help='Number of DEX pools to generate (default: 50)'
-    )
-    
-    parser.add_argument(
-        '--crises', 
-        type=int, 
-        default=6,
-        help='Number of crisis events to generate (default: 6)'
-    )
     
     parser.add_argument(
         '--skip-test', 
@@ -71,6 +60,11 @@ Examples:
         '--no-prompt', 
         action='store_true',
         help='Skip interactive prompts between steps (run non-interactively)'
+    )
+    parser.add_argument(
+        '--data-only',
+        action='store_true', 
+        help='Skip setup steps (pip install, BQ test) and go straight to schema creation and data generation'
     )
     
     return parser.parse_args()
@@ -123,9 +117,10 @@ def main():
     print(f"Dataset ID: {args.dataset}")
     print(f"Target: {target}")
     print(f"Hard Reset: {'YES' if args.hard_reset else 'NO'}")
-    print(f"DEX Pools: {args.pools}")
-    print(f"Crisis Events: {args.crises}")
+    print(f"DEX Pools: ALL available real pools from Ethereum (crisis tokens × base tokens)")
+    print(f"Crisis Events: {CRISES}")
     print(f"Interactive Mode: {'OFF' if args.no_prompt else 'ON'}")
+    print(f"Data Only Mode: {'ON' if args.data_only else 'OFF'}")
     
     # Get the directory where this script is located
     script_dir = Path(__file__).parent
@@ -133,22 +128,26 @@ def main():
     success = True
     interactive = not args.no_prompt
     
-    # Step 0: Install Python dependencies
-    cmd = [sys.executable, "-m", "pip", "install", "-r", str(script_dir / "requirements.txt")]
-    success &= run_command(cmd, "Step 0: Installing Python Dependencies", interactive)
-    if not success:
-        print("❌ Pipeline failed at dependency installation")
-        sys.exit(1)
-    
-    # Step 1: Test BigQuery connection (optional)
-    if not args.skip_test:
-        cmd = [sys.executable, str(script_dir / "01_test_bq.py")]
-        success &= run_command(cmd, "Step 1: Testing BigQuery Connection", interactive)
+    # Skip setup steps if data-only mode is enabled
+    if not args.data_only:
+        # Step 0: Install Python dependencies
+        cmd = [sys.executable, "-m", "pip", "install", "-r", str(script_dir / "requirements.txt")]
+        success &= run_command(cmd, "Step 0: Installing Python Dependencies", interactive)
         if not success:
-            print("❌ Pipeline failed at BigQuery connection test")
+            print("❌ Pipeline failed at dependency installation")
             sys.exit(1)
+        
+        # Step 1: Test BigQuery connection (optional)
+        if not args.skip_test:
+            cmd = [sys.executable, str(script_dir / "01_test_bq.py")]
+            success &= run_command(cmd, "Step 1: Testing BigQuery Connection", interactive)
+            if not success:
+                print("❌ Pipeline failed at BigQuery connection test")
+                sys.exit(1)
+        else:
+            print("\n⏭️  Skipping BigQuery connection test")
     else:
-        print("\n⏭️  Skipping BigQuery connection test")
+        print("\n🚀 DATA-ONLY MODE: Skipping setup steps, going straight to schema creation and data generation")
     
     # Step 2: Create schemas
     cmd = [
@@ -156,7 +155,7 @@ def main():
         str(script_dir / "02_create_schemas.py"), 
         "--target", target
     ]
-    if args.hard_reset:
+    if args.hard_reset or args.data_only:
         cmd.append("--drop")
     
     success &= run_command(cmd, "Step 2: Creating BigQuery Schemas", interactive)
@@ -164,30 +163,53 @@ def main():
         print("❌ Pipeline failed at schema creation")
         sys.exit(1)
     
-    # Step 3: Generate M1 data (DEX pools and price history)
+    # Step 3: Generate crisis events first
     cmd = [
         sys.executable, 
-        str(script_dir / "03_generate_m1_data.py"), 
+        str(script_dir / "03_generate_crisis_data.py"), 
         "--target", target,
-        "--pools", str(args.pools)
+        "--count", str(CRISES)
     ]
     
-    success &= run_command(cmd, "Step 3: Generating M1 Foundation Data", interactive)
+    success &= run_command(cmd, "Step 3: Generating Crisis Events Data", interactive)
     if not success:
-        print("❌ Pipeline failed at M1 data generation")
+        print("❌ Pipeline failed at crisis data generation")
         sys.exit(1)
     
-    # Step 4: Generate M2 data (crisis events)
+    # Step 4: Generate price history data
     cmd = [
         sys.executable, 
-        str(script_dir / "04_generate_m2_data.py"), 
-        "--target", target,
-        "--count", str(args.crises)
+        str(script_dir / "04_generate_price_history.py"), 
+        "--target", target
     ]
     
-    success &= run_command(cmd, "Step 4: Generating M2 Crisis Data", interactive)
+    success &= run_command(cmd, "Step 4: Generating Price History Data", interactive)
     if not success:
-        print("❌ Pipeline failed at M2 data generation")
+        print("❌ Pipeline failed at price history generation")
+        sys.exit(1)
+    
+    # Step 5: Generate DEX pools data
+    cmd = [
+        sys.executable, 
+        str(script_dir / "05_generate_dex_pools.py"), 
+        "--target", target
+    ]
+    
+    success &= run_command(cmd, "Step 5: Generating DEX Pools Data", interactive)
+    if not success:
+        print("❌ Pipeline failed at DEX pools generation")
+        sys.exit(1)
+    
+    # Step 6: Verify data quality
+    cmd = [
+        sys.executable, 
+        str(script_dir / "06_verify_data_quality.py"), 
+        "--target", target
+    ]
+    
+    success &= run_command(cmd, "Step 6: Verifying Data Quality", interactive)
+    if not success:
+        print("❌ Pipeline failed at data quality verification")
         sys.exit(1)
     
     # Pipeline completed successfully
@@ -196,9 +218,10 @@ def main():
     print(f"{'='*60}")
     print(f"✅ Python dependencies installed")
     print(f"✅ All tables created in: {target}")
-    print(f"✅ Generated {args.pools} DEX pools")
-    print(f"✅ Generated {args.crises} crisis events")
+    print(f"✅ Generated {CRISES} crisis events")
     print(f"✅ Generated comprehensive price history data")
+    print(f"✅ Generated ALL available real DEX pools from Ethereum (crisis tokens × base tokens)")
+    print(f"✅ Data quality verification passed")
 
 
 
