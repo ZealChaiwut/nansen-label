@@ -2,7 +2,20 @@
 
 A BigQuery-based labeling system to identify "Phoenix Flipper" wallets that buy tokens during crisis events and profit from market recovery.
 
-## Project Structure
+## Setup Guide
+
+For detailed setup instructions, data generation, and pipeline execution, see:
+
+**📋 [Setup Guide → `prep/README.md`](prep/README.md)**
+
+The preparation scripts will:
+- Create BigQuery schemas for 6 tables
+- Generate realistic crisis events using popular tokens
+- Pull real DEX pool addresses from Ethereum blockchain data
+- Generate aligned price history with crisis drops and recovery
+- Verify data quality and joinability
+
+### Project Structure
 
 ```
 phoenix-flipper/
@@ -36,19 +49,6 @@ phoenix-flipper/
     └── dim_wallet_labels.sql   # Final labels schema
 ```
 
-## Preparation and Setup
-
-For detailed setup instructions, data generation, and pipeline execution, see:
-
-**📋 [Setup Guide → `prep/README.md`](prep/README.md)**
-
-The preparation scripts will:
-- Create BigQuery schemas for 6 tables
-- Generate realistic crisis events using popular tokens
-- Pull real DEX pool addresses from Ethereum blockchain data
-- Generate aligned price history with crisis drops and recovery
-- Verify data quality and joinability
-
 ## Quick Start
 
 ```bash
@@ -62,47 +62,6 @@ python 01_identify_crisis_buyers.py --target nansen-label.phoenix_flipper
 # Step 2: Calculate P&L and show leaderboard
 python 02_calculate_pnl_leaderboard.py --target nansen-label.phoenix_flipper
 ```
-
-**Core Milestones Overview:**
-
-1.  **Identify Potential Crisis Events:** Find tokens that had a sharp, token-specific price crash or liquidity drain on DEXs, filtering out general market drops.
-2.  **Define the Contrarian Buy Window:** Determine the specific timeframe *after* the initial crash when a "Phoenix Flipper" would likely buy (e.g., 12-84 hours post-crash).
-3.  **Identify Wallets Buying During the Window:** Find the specific wallets that acquired the crashed token via DEX swaps within that defined timeframe.
-4.  **Measure Recovery & Estimate Profit:** Check if the token's price recovered significantly later and estimate if the wallets identified in M3 achieved substantial gains (e.g., >3x).
-5.  **Assign the "Phoenix Flipper" Label:** Tag the wallets meeting the criteria from M4 in the final labels table.
-
----
-
-This implementation focuses on demonstrating the core **on-chain analysis and P&L estimation logic** (Milestones 3 & 4) for the "Phoenix Flipper" label, producing a ranked list of the top 100 potential flipper wallets based on estimated gains.
-
-**Data Simulation & Prep (Approx. 2 Hour):**
-
-* **Milestone 2 (Simulated First):** We will **simulate** the output of the crisis event detection. This involves defining a small set of specific `crisis_token_address`-`pool_address` pairs (targeting Uniswap V2) and their corresponding `buy_window_start`/`buy_window_end` timestamps directly in the SQL using `WITH` clauses (CTEs).
-* **Milestone 1 (Simulated Second):** Pool metadata (`dim_dex_pools`) and necessary daily price/liquidity data (`fct_pool_liquidity_daily`) for *only* the specific pools/tokens/dates identified in the simulated M2 output will be **simulated** using CTEs.
-
-**Implementation Scope (Approx. 2 Hours):**
-
-### Analysis Phase
-Step 1. **Crisis Buyers** → Identify buyers during crisis windows from Ethereum logs (`01_identify_crisis_buyers.py`)
-   - Queries all available pools with configurable date range and transaction limits
-   - Stores individual buy transactions in `stg_crisis_buyers` table
-   - Supports `--dry-run` for testing without writing to BigQuery (recommended for first run)
-
-Step 2. **P&L Leaderboard** → Calculate profit and loss for recovery periods (`02_calculate_pnl_leaderboard.py`)
-   - Finds peak recovery prices within 90-day windows after purchases
-   - Calculates profit percentages and USD amounts for each transaction
-   - Shows top 10 leaderboard with detailed transaction breakdown
-   - Stores profitable flippers above 10% profit threshold in `stg_profitable_flippers` table
-
-**Out of Scope:**
-
-* Building the full, automated Crisis Event Detection pipeline (M1/M2).
-* Building robust, persistent helper tables (`dim_dex_pools`, `fct_pool_liquidity_daily`).
-* Implementing detailed holding checks or precise P&L accounting.
-* **Calculating *Realized* PnL:** The P&L estimation (M4) is based *only* on the buy activity during the crisis window and an estimated recovery price. It does **not track subsequent sell transactions** due to the complexity and potential data volume involved in tracking individual token disposals.
-* Integrating into a final `dim_wallet_labels` table (M5).
-* Unit Testing & Data Quality Monitoring implementation.
-* Analysis of DEX pools beyond **Uniswap V2** (e.g., SushiSwap, Curve).
 
 ## Architecture Overview
 
@@ -130,7 +89,35 @@ Step 2. **P&L Leaderboard** → Calculate profit and loss for recovery periods (
 - **SQL Dependency**: Core logic is still SQL-heavy, but UDFs help encapsulate complex logic
 - **Local limitation and bottlenecks**: Using Python on local and pandas has limitation on the memory and bottlenecks
 
-## Future Works:
+## Core Milestone Overview
+
+1. **Identify Potential Crisis Events:** Find tokens that had a sharp, token-specific price crash or liquidity drain on DEXs, filtering out general market drops.
+2. **Define the Contrarian Buy Window:** Determine the specific timeframe *after* the initial crash when a "Phoenix Flipper" would likely buy (e.g., 12-84 hours post-crash).
+3. **Identify Wallets Buying During the Window:** Find the specific wallets that acquired the crashed token via DEX swaps within that defined timeframe.
+4. **Measure Recovery & Estimate Profit:** Check if the token's price recovered significantly later and estimate if the wallets identified in M3 achieved substantial gains (e.g., >3x).
+5. **Assign the "Phoenix Flipper" Label:** Tag the wallets meeting the criteria from M4 in the final labels table.
+
+## Implementation Scope
+
+This implementation focuses on demonstrating the core **on-chain analysis and P&L estimation logic** (Milestones 3 & 4) for the "Phoenix Flipper" label, producing a ranked list of the top 100 potential flipper wallets based on estimated gains.
+
+### Analysis Phase
+**Step 1. Crisis Buyers** → Identify buyers during crisis windows from Ethereum logs (`01_identify_crisis_buyers.py`)
+- Queries all available pools with configurable date range and transaction limits
+- Stores individual buy transactions in `stg_crisis_buyers` table
+- Supports `--dry-run` for testing without writing to BigQuery (recommended for first run)
+
+**Step 2. P&L Leaderboard** → Calculate profit and loss for recovery periods (`02_calculate_pnl_leaderboard.py`)
+- Finds peak recovery prices within 90-day windows after purchases
+- Calculates profit percentages and USD amounts for each transaction
+- Shows top 10 leaderboard with detailed transaction breakdown
+- Stores profitable flippers above 10% profit threshold in `stg_profitable_flippers` table
+
+### Data Simulation & Prep
+- **Milestone 2 (Simulated First):** We will **simulate** the output of the crisis event detection. This involves defining a small set of specific `crisis_token_address`-`pool_address` pairs (targeting Uniswap V2) and their corresponding `buy_window_start`/`buy_window_end` timestamps directly in the SQL using `WITH` clauses (CTEs).
+- **Milestone 1 (Simulated Second):** Pool metadata (`dim_dex_pools`) and necessary daily price/liquidity data (`fct_pool_liquidity_daily`) for *only* the specific pools/tokens/dates identified in the simulated M2 output will be **simulated** using CTEs.
+
+## Future Works
 
 - **Automated Crisis Detection** → Build full M1/M2 pipeline for real-time crisis event identification
 - **Multi-DEX Support** → Expand beyond Uniswap V2 to include SushiSwap, Curve, and other DEXs
