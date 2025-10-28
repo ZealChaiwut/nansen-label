@@ -1,23 +1,6 @@
 #!/usr/bin/env python3
 """
 Milestone 3: Identify Crisis Buyers
-
-This script identifies wallets that bought tokens during crisis windows by:
-1. Querying Ethereum swap transactions during crisis buy windows
-2. Filtering for our tracked DEX pools and crisis tokens  
-3. Identifying buyers (not sellers) of crisis tokens
-4. Storing individual buy transactions in stg_crisis_buyers table (no aggregation)
-5. Each record represents one crisis token purchase transaction
-
-Features:
-- Configurable date ranges and transaction limits
-- Real-time price calculation from dim_token_price_history table
-- USD value calculation for each transaction
-- Comprehensive data validation and type checking
-- Sample record preview before BigQuery insertion
-- Dry-run mode for testing without BigQuery writes
-- Explicit BigQuery schema definition for data integrity
-- Step-by-step processing with detailed logging
 """
 
 import sys

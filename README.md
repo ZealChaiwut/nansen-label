@@ -21,6 +21,7 @@ phoenix-flipper/
 │   └── README.md               # Setup instructions
 │
 ├── identify_crisis_buyers.py    # Milestone 3: Identify crisis buyers
+├── calculate_pnl_leaderboard.py # Milestone 4: Calculate P&L and leaderboard
 │
 ├── lib/                        # Shared utilities
 │   ├── __init__.py             # Python package init
@@ -59,8 +60,15 @@ python prep/00_run_prep.py --project YOUR_PROJECT --dataset phoenix_flipper
 # Run crisis buyers analysis (Milestone 3)
 python identify_crisis_buyers.py --target YOUR_PROJECT.phoenix_flipper
 
+# Calculate P&L and show leaderboard (Milestone 4)
+python calculate_pnl_leaderboard.py --target YOUR_PROJECT.phoenix_flipper
+
+# With custom options
+python calculate_pnl_leaderboard.py --target YOUR_PROJECT.phoenix_flipper --top-n 20 --recovery-days 60 --min-profit 25.0
+
 # Or run dry-run to test without writing to BigQuery
 python identify_crisis_buyers.py --target YOUR_PROJECT.phoenix_flipper --dry-run
+python calculate_pnl_leaderboard.py --target YOUR_PROJECT.phoenix_flipper --dry-run
 ```
 
 ## Pipeline Overview
@@ -75,7 +83,11 @@ python identify_crisis_buyers.py --target YOUR_PROJECT.phoenix_flipper --dry-run
 5. **Wallet Analysis** → Identify buyers during crisis windows from Ethereum logs (`identify_crisis_buyers.py`)
    - Queries all available pools with configurable date range and transaction limits
    - Supports `--dry-run` for testing without writing to BigQuery (recommended for first run)
-6. **Profit Calculation** → (Future) Calculate PnL for recovery periods
+6. **Profit Calculation** → Calculate P&L for recovery periods (`calculate_pnl_leaderboard.py`)
+   - Finds peak recovery prices within 90-day windows after purchases
+   - Calculates profit percentages and USD amounts for each transaction
+   - Shows top 10 leaderboard with detailed transaction breakdown
+   - Stores profitable flippers in `stg_profitable_flippers` table
 7. **Label Assignment** → (Future) Tag profitable "Phoenix Flipper" wallets
 
 ## Architecture Overview
