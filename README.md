@@ -102,11 +102,11 @@ python 02_calculate_pnl_leaderboard.py --target nansen-label.phoenix_flipper
 This implementation focuses on demonstrating the core **on-chain analysis and P&L estimation logic** (Milestones 3 & 4) for the "Phoenix Flipper" label, producing a ranked list of the top 100 potential flipper wallets based on estimated gains.
 
 ### Analysis Phase
-**Step 1. Crisis Buyers** → Identify buyers during crisis windows from Ethereum logs (`01_identify_crisis_buyers.py`)
+**Milestone 3. Crisis Buyers** → Identify buyers during crisis windows from Ethereum logs (`01_identify_crisis_buyers.py`)
 - Queries all available pools with configurable date range (2 years) and transaction limits (1M transactions)
 - Stores individual buy transactions in `stg_crisis_buyers` table
 
-**Step 2. P&L Leaderboard** → Calculate profit and loss for recovery periods (`02_calculate_pnl_leaderboard.py`)
+**Milestone 4. P&L Leaderboard** → Calculate profit and loss for recovery periods (`02_calculate_pnl_leaderboard.py`)
 - Finds peak recovery prices within 90-day windows after purchases (Did not calculate the realized P&L)
 - Calculates profit percentages and USD amounts for each transaction
 - Shows top 10 leaderboard with detailed transaction breakdown
@@ -119,11 +119,11 @@ This implementation focuses on demonstrating the core **on-chain analysis and P&
 
 ## Future Works
 
-- **Automated Crisis Detection** → Build full M1/M2 pipeline for real-time crisis event identification
+- **Automated Crisis Detection** → Build full **M1/M2** pipeline for real-time crisis event identification
 - **Multi-DEX Support** → Expand beyond Uniswap V2 to include SushiSwap, Curve, and other DEXs
 - **Realized P&L Tracking** → Track actual sell transactions to calculate true realized profits
 - **Advanced Wallet Profiling** → Implement detailed holding checks and precise P&L accounting
-- **Production Label Pipeline** → Complete M5 integration into `dim_wallet_labels` table
+- **Production Label Pipeline** → Complete **M5** integration into `dim_wallet_labels` table
 - **Data Quality Monitoring** → Add unit testing and automated data validation systems
 - **Scalable Infrastructure** → Move from local Python/pandas to distributed processing for large datasets
 
