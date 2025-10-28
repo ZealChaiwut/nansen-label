@@ -91,11 +91,11 @@ python 02_calculate_pnl_leaderboard.py --target nansen-label.phoenix_flipper
 
 ## Core Milestone Overview
 
-1. **Identify Potential Crisis Events:** Find tokens that had a sharp, token-specific price crash or liquidity drain on DEXs, filtering out general market drops.
-2. **Define the Contrarian Buy Window:** Determine the specific timeframe *after* the initial crash when a "Phoenix Flipper" would likely buy (e.g., 12-84 hours post-crash).
-3. **Identify Wallets Buying During the Window:** Find the specific wallets that acquired the crashed token via DEX swaps within that defined timeframe.
-4. **Measure Recovery & Estimate Profit:** Check if the token's price recovered significantly later and estimate if the wallets identified in M3 achieved substantial gains (e.g., >3x).
-5. **Assign the "Phoenix Flipper" Label:** Tag the wallets meeting the criteria from M4 in the final labels table.
+1. **Milestone 1: Identify Potential Crisis Events:** Find tokens that had a sharp, token-specific price crash or liquidity drain on DEXs, filtering out general market drops.
+2. **Milestone 2: Define the Contrarian Buy Window:** Determine the specific timeframe *after* the initial crash when a "Phoenix Flipper" would likely buy (e.g., 12-84 hours post-crash).
+3. **Milestone 3: Identify Wallets Buying During the Window:** Find the specific wallets that acquired the crashed token via DEX swaps within that defined timeframe.
+4. **Milestone 4: Measure Recovery & Estimate Profit:** Check if the token's price recovered significantly later and estimate if the wallets identified in M3 achieved substantial gains (e.g., >3x).
+5. **Milestone 5: Assign the "Phoenix Flipper" Label:** Tag the wallets meeting the criteria from M4 in the final labels table.
 
 ## Implementation Scope
 
@@ -103,19 +103,19 @@ This implementation focuses on demonstrating the core **on-chain analysis and P&
 
 ### Analysis Phase
 **Step 1. Crisis Buyers** → Identify buyers during crisis windows from Ethereum logs (`01_identify_crisis_buyers.py`)
-- Queries all available pools with configurable date range and transaction limits
+- Queries all available pools with configurable date range (2 years) and transaction limits (1M transactions)
 - Stores individual buy transactions in `stg_crisis_buyers` table
-- Supports `--dry-run` for testing without writing to BigQuery (recommended for first run)
 
 **Step 2. P&L Leaderboard** → Calculate profit and loss for recovery periods (`02_calculate_pnl_leaderboard.py`)
-- Finds peak recovery prices within 90-day windows after purchases
+- Finds peak recovery prices within 90-day windows after purchases (Did not calculate the realized P&L)
 - Calculates profit percentages and USD amounts for each transaction
 - Shows top 10 leaderboard with detailed transaction breakdown
-- Stores profitable flippers above 10% profit threshold in `stg_profitable_flippers` table
+- Stores profitable flippers transaction with profit above 10% profit threshold in `stg_profitable_flippers` table
 
 ### Data Simulation & Prep
-- **Milestone 2 (Simulated First):** We will **simulate** the output of the crisis event detection. This involves defining a small set of specific `crisis_token_address`-`pool_address` pairs (targeting Uniswap V2) and their corresponding `buy_window_start`/`buy_window_end` timestamps directly in the SQL using `WITH` clauses (CTEs).
+- **Milestone 2 (Simulated First):** Simulate the output of the crisis event and random price history to match the event. This involves defining a small set of specific `crisis_token_address`-`pool_address` pairs (targeting Uniswap V2) and their corresponding `buy_window_start`/`buy_window_end`
 - **Milestone 1 (Simulated Second):** Pool metadata (`dim_dex_pools`) and necessary daily price/liquidity data (`fct_pool_liquidity_daily`) for *only* the specific pools/tokens/dates identified in the simulated M2 output will be **simulated** using CTEs.
+- Note that, Milestone 2 data was firstly mocked because of price history should be able to match with the crisis event and we cannot use the real token due to we need the token existed in the public data of `Uniswap V2`
 
 ## Future Works
 
